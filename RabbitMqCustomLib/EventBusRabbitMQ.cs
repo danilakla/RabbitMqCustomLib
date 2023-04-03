@@ -12,16 +12,14 @@ using System.Threading.Tasks;
 using RabbitMQ.Client;
 using Autofac;
 using Microsoft.Extensions.Logging;
-using Polly.Retry;
 using RabbitMQ.Client.Exceptions;
-using Polly;
 using RabbitMQ.Client.Events;
 
 namespace RabbitMqCustomLib;
 public class EventBusRabbitMQ : IEventBus, IDisposable
 {
-    const string BROKER_NAME = "app_event_bus";
-    const string AUTOFAC_SCOPE_NAME = "app_event_bus";
+    const string BROKER_NAME = "eshop_event_bus";
+    const string AUTOFAC_SCOPE_NAME = "eshop_event_bus";
 
     private readonly IRabbitMQPersistentConnection _persistentConnection;
     private readonly ILogger<EventBusRabbitMQ> _logger;
@@ -71,13 +69,6 @@ public class EventBusRabbitMQ : IEventBus, IDisposable
             _persistentConnection.TryConnect();
         }
 
-        var policy = RetryPolicy.Handle<BrokerUnreachableException>()
-            .Or<SocketException>()
-            .WaitAndRetry(_retryCount, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)), (ex, time) =>
-            {
-                _logger.LogWarning(ex, "Could not publish event: {EventId} after {Timeout}s ({ExceptionMessage})", @event.Id, $"{time.TotalSeconds:n1}", ex.Message);
-            });
-
         var eventName = @event.GetType().Name;
 
         _logger.LogTrace("Creating RabbitMQ channel to publish event: {EventId} ({EventName})", @event.Id, eventName);
@@ -92,8 +83,7 @@ public class EventBusRabbitMQ : IEventBus, IDisposable
             WriteIndented = true
         });
 
-        policy.Execute(() =>
-        {
+      
             var properties = channel.CreateBasicProperties();
             properties.DeliveryMode = 2; // persistent
 
@@ -105,7 +95,7 @@ public class EventBusRabbitMQ : IEventBus, IDisposable
                 mandatory: true,
                 basicProperties: properties,
                 body: body);
-        });
+        
     }
 
     public void SubscribeDynamic<TH>(string eventName)

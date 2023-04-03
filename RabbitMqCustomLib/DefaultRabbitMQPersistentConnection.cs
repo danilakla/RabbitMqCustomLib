@@ -4,8 +4,7 @@ using EventBus.Abstructions;
 using EventBus.Events;
 using EventBus.Extensions;
 using Microsoft.Extensions.Logging;
-using Polly;
-using Polly.Retry;
+
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
@@ -76,13 +75,6 @@ namespace RabbitMqCustomLib
                     _persistentConnection.TryConnect();
                 }
 
-                var policy = RetryPolicy.Handle<BrokerUnreachableException>()
-                    .Or<SocketException>()
-                    .WaitAndRetry(_retryCount, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)), (ex, time) =>
-                    {
-                        _logger.LogWarning(ex, "Could not publish event: {EventId} after {Timeout}s ({ExceptionMessage})", @event.Id, $"{time.TotalSeconds:n1}", ex.Message);
-                    });
-
                 var eventName = @event.GetType().Name;
 
                 _logger.LogTrace("Creating RabbitMQ channel to publish event: {EventId} ({EventName})", @event.Id, eventName);
@@ -97,8 +89,6 @@ namespace RabbitMqCustomLib
                     WriteIndented = true
                 });
 
-                policy.Execute(() =>
-                {
                     var properties = channel.CreateBasicProperties();
                     properties.DeliveryMode = 2; // persistent
 
@@ -110,7 +100,6 @@ namespace RabbitMqCustomLib
                         mandatory: true,
                         basicProperties: properties,
                         body: body);
-                });
             }
 
             public void SubscribeDynamic<TH>(string eventName)
@@ -346,19 +335,12 @@ namespace RabbitMqCustomLib
 
             lock (_syncRoot)
             {
-                var policy = RetryPolicy.Handle<SocketException>()
-                    .Or<BrokerUnreachableException>()
-                    .WaitAndRetry(_retryCount, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)), (ex, time) =>
-                    {
-                        _logger.LogWarning(ex, "RabbitMQ Client could not connect after {TimeOut}s ({ExceptionMessage})", $"{time.TotalSeconds:n1}", ex.Message);
-                    }
-                );
+            
 
-                policy.Execute(() =>
-                {
+                
                     _connection = _connectionFactory
                             .CreateConnection();
-                });
+            
 
                 if (IsConnected)
                 {
